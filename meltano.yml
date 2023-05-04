@@ -17,7 +17,10 @@ plugins:
     - stream-maps
     settings:
     - name: auth_token
+      required: true
       kind: password
+    - name: environment
+      required: true
   loaders:
   - name: target-jsonl
     variant: andyh1203
