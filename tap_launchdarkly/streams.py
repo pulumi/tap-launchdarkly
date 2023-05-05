@@ -48,7 +48,10 @@ class FeatureFlags(LaunchDarklyStream):
 
     records_jsonpath = "$.items[*]"
     replication_key = None
-    schema = th.PropertiesList(
+
+    @property
+    def schema(self):
+        return th.PropertiesList(
         th.Property("project_key", th.StringType),
         th.Property("key", th.StringType),
         th.Property("name", th.StringType),
@@ -71,6 +74,12 @@ class FeatureFlags(LaunchDarklyStream):
         th.Property("defaults", th.ObjectType(
             th.Property("onVariation", th.IntegerType),
             th.Property("offVariation", th.IntegerType)
+        )),
+        th.Property("environments", th.ObjectType(
+            th.Property(self.config.get("environment", ""), th.ObjectType(
+                th.Property("on", th.BooleanType),
+                th.Property("offVariation", th.IntegerType)
+            ))
         )),
         th.Property("tags", th.ArrayType(th.StringType))
     ).to_dict()
