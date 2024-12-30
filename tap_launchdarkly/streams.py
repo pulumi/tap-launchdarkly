@@ -102,10 +102,16 @@ class FeatureFlagTargets(LaunchDarklyStream):
     def records_jsonpath(self):
         environment = self.config.get("environment", "")
         return f"$.environments.{environment}.targets[*]"
+    
+    @property
+    def contextTargets_jsonpath(self):
+        environment = self.config.get("environment", "")
+        return f"$.environments.{environment}.contextTargets[*]"
 
     
     def parse_response(self, response: requests.Response) -> Iterable[dict]:
         targets = extract_jsonpath(self.records_jsonpath, input=response.json())
+        targets.extend(extract_jsonpath(self.contextTargets_jsonpath, input=response.json()))
         for target in targets:
             variation = target['variation']
             contextKind = target['contextKind']
