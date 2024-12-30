@@ -8,6 +8,7 @@ from typing import Dict, Optional, Iterable
 
 from singer_sdk import typing as th  # JSON Schema typing helpers
 from singer_sdk.helpers.jsonpath import extract_jsonpath
+from itertools import izip
 
 from tap_launchdarkly.client import LaunchDarklyStream
 
@@ -111,8 +112,8 @@ class FeatureFlagTargets(LaunchDarklyStream):
     
     def parse_response(self, response: requests.Response) -> Iterable[dict]:
         targets = extract_jsonpath(self.records_jsonpath, input=response.json())
-        targets.extend(extract_jsonpath(self.contextTargets_jsonpath, input=response.json()))
-        for target in targets:
+        contextTargets = extract_jsonpath(self.contextTargets_jsonpath, input=response.json())
+        for target in izip(targets, contextTargets):
             variation = target['variation']
             contextKind = target['contextKind']
             for value in target['values']:
