@@ -8,7 +8,8 @@ plugins:
   extractors:
   - name: "tap-launchdarkly"
     namespace: "tap_launchdarkly"
-    pip_url: -e .
+    # setuptools: singer-sdk 0.26 imports pkg_resources, removed from setuptools>=81
+    pip_url: -e . setuptools<81
     capabilities:
     - state
     - catalog
@@ -24,4 +25,5 @@ plugins:
   loaders:
   - name: target-jsonl
     variant: andyh1203
-    pip_url: target-jsonl
+    # setuptools: target-jsonl imports pkg_resources, removed from setuptools>=81
+    pip_url: target-jsonl setuptools<81
