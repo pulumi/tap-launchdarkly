@@ -4,15 +4,29 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Callable, Iterable
+from urllib.parse import parse_qsl
 
 import requests
 from singer_sdk.authenticators import APIKeyAuthenticator
 from singer_sdk.helpers.jsonpath import extract_jsonpath
-from singer_sdk.pagination import BaseAPIPaginator  # noqa: TCH002
+from singer_sdk.pagination import BaseAPIPaginator, BaseHATEOASPaginator
 from singer_sdk.streams import RESTStream
 
 _Auth = Callable[[requests.PreparedRequest], requests.PreparedRequest]
 SCHEMAS_DIR = Path(__file__).parent / Path("./schemas")
+
+# Pinned REST API version, sent on every request so behavior does not depend on
+# the version the access token happens to be pinned to. 20240415 paginates the
+# list-flags endpoint (default limit 20) and only returns the `environments`
+# field when an `env` filter is passed - both handled below and in streams.py.
+LD_API_VERSION = "20240415"
+
+
+class LaunchDarklyPaginator(BaseHATEOASPaginator):
+    """Follow LaunchDarkly's `_links.next.href` pagination links."""
+
+    def get_next_url(self, response: requests.Response) -> str | None:
+        return response.json().get("_links", {}).get("next", {}).get("href")
 
 
 class LaunchDarklyStream(RESTStream):
@@ -24,9 +38,6 @@ class LaunchDarklyStream(RESTStream):
         return "https://app.launchdarkly.com/api/v2"
 
     records_jsonpath = "$[*]"  # Or override `parse_response`.
-
-    # Set this value or override `get_new_paginator`.
-    next_page_token_jsonpath = "$.next_page"  # noqa: S105
 
     @property
     def authenticator(self) -> APIKeyAuthenticator:
@@ -49,27 +60,18 @@ class LaunchDarklyStream(RESTStream):
         Returns:
             A dictionary of HTTP headers.
         """
-        headers = {}
+        headers: dict = {"LD-API-Version": LD_API_VERSION}
         if "user_agent" in self.config:
             headers["User-Agent"] = self.config.get("user_agent")
-        # If not using an authenticator, you may also provide inline auth headers:
-        # headers["Private-Token"] = self.config.get("auth_token")  # noqa: ERA001
         return headers
 
     def get_new_paginator(self) -> BaseAPIPaginator:
         """Create a new pagination helper instance.
 
-        If the source API can make use of the `next_page_token_jsonpath`
-        attribute, or it contains a `X-Next-Page` header in the response
-        then you can remove this method.
-
-        If you need custom pagination that uses page numbers, "next" links, or
-        other approaches, please read the guide: https://sdk.meltano.com/en/v0.25.0/guides/pagination-classes.html.
-
         Returns:
             A pagination helper instance.
         """
-        return super().get_new_paginator()
+        return LaunchDarklyPaginator()
 
     def get_url_params(
         self,
@@ -80,14 +82,17 @@ class LaunchDarklyStream(RESTStream):
 
         Args:
             context: The stream context.
-            next_page_token: The next page index or value.
+            next_page_token: The parsed `_links.next.href` URL of the next page.
 
         Returns:
             A dictionary of URL query parameters.
         """
         params: dict = {}
         if next_page_token:
-            params["page"] = next_page_token
+            # BaseHATEOASPaginator yields a urllib ParseResult of the next href;
+            # its query carries the full continuation (limit/offset and any
+            # filters), so reuse it verbatim.
+            params.update(dict(parse_qsl(next_page_token.query)))
         if self.replication_key:
             params["sort"] = "asc"
             params["order_by"] = self.replication_key

@@ -49,6 +49,18 @@ class FeatureFlags(LaunchDarklyStream):
     records_jsonpath = "$.items[*]"
     replication_key = None
 
+    def get_url_params(self, context, next_page_token):
+        params = super().get_url_params(context, next_page_token)
+        # API version 20240415 only returns the `environments` field when an
+        # `env` filter is passed, and only the summary config unless summary=0
+        # (the schema reads environments.<env>.offVariation, a non-summary field).
+        params["env"] = self.config.get("environment", "")
+        params["summary"] = 0
+        # 20240415 paginates this endpoint (default limit 20); fetch bigger pages
+        # and let the base paginator follow `_links.next.href` for the rest.
+        params.setdefault("limit", 100)
+        return params
+
     @property
     def schema(self):
         return th.PropertiesList(
@@ -97,6 +109,13 @@ class FeatureFlagTargets(LaunchDarklyStream):
     path = "/flags/{project_key}/{feature_flag_key}"
     parent_stream_type = FeatureFlags
     primary_keys = ["project_key", "feature_flag_key", "target"]
+
+    def get_url_params(self, context, next_page_token):
+        params = super().get_url_params(context, next_page_token)
+        # Restrict the single-flag response to the configured environment; the
+        # parse below reads environments.<env>.targets / .contextTargets.
+        params["env"] = self.config.get("environment", "")
+        return params
 
     @property
     def records_jsonpath(self):
