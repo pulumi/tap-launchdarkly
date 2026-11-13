@@ -11,6 +11,12 @@ from singer_sdk.helpers.jsonpath import extract_jsonpath
 
 from tap_launchdarkly.client import LaunchDarklyStream
 
+# Schemas without `properties`/`items` make the SDK pass the value through
+# as is, instead of dropping undeclared nested keys.
+_ANY = th.CustomType({})
+_ANY_OBJECT = th.CustomType({"type": ["object", "null"]})
+_ANY_ARRAY = th.CustomType({"type": ["array", "null"]})
+
 class ProjectsStream(LaunchDarklyStream):
     """Define custom stream."""
 
@@ -76,7 +82,13 @@ class FeatureFlags(LaunchDarklyStream):
         )),
         th.Property("variations", th.ArrayType(th.ObjectType(
             th.Property("_id", th.StringType),
-            th.Property("value", th.BooleanType)
+            # Any JSON for multivariate flags. A boolean type made the SDK
+            # coerce every non-zero value to true. Required, because an
+            # optional property must have a `type` to add "null" to, and any
+            # type list with "boolean" in it brings the coercion back.
+            th.Property("value", _ANY, required=True),
+            th.Property("name", th.StringType),
+            th.Property("description", th.StringType)
         ))),
         th.Property("temporary", th.BooleanType),
         th.Property("archived", th.BooleanType),
@@ -90,7 +102,16 @@ class FeatureFlags(LaunchDarklyStream):
         th.Property("environments", th.ObjectType(
             th.Property(self.config.get("environment", ""), th.ObjectType(
                 th.Property("on", th.BooleanType),
-                th.Property("offVariation", th.IntegerType)
+                th.Property("archived", th.BooleanType),
+                th.Property("offVariation", th.IntegerType),
+                th.Property("version", th.IntegerType),
+                th.Property("lastModified", th.IntegerType),
+                # Default rule: {variation} or {rollout: {variations: [{variation, weight}]}}.
+                th.Property("fallthrough", _ANY_OBJECT),
+                th.Property("rules", _ANY_ARRAY),
+                th.Property("prerequisites", _ANY_ARRAY),
+                # Per-variation counts of rules, targets, fallthrough and off.
+                th.Property("_summary", _ANY_OBJECT)
             ))
         )),
         th.Property("tags", th.ArrayType(th.StringType))
